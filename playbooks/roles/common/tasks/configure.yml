@@ -10,7 +10,7 @@
 ###############
 - name: Create RockNSM directories
   file:
-    path: "{{ rock_data_dir }}"
+    path: "{{ item }}"
     mode: 0755
     owner: "{{ rock_data_user }}"
     group: "{{ rock_data_group }}"
@@ -111,7 +111,7 @@
     - { repoid: "rocknsm_2_2", path: "/etc/pki/rpm-gpg/RPM-GPG-KEY-RockNSM-2" }
     - { repoid: "rocknsm_2_2", path: "/etc/pki/rpm-gpg/RPM-GPG-KEY-RockNSM-pkgcloud-2_2" }
     - { repoid: "rocknsm-testing", path: "/etc/pki/rpm-gpg/RPM-GPG-KEY-RockNSM-Testing"}
-    - { repoid: "rocknsm-local", path: "/etc/pki/rpm-gpg/RPM-GPG-KEY-RockNSM-2" }
+    #- { repoid: "rocknsm-local", path: "/etc/pki/rpm-gpg/RPM-GPG-KEY-RockNSM-2" }
   register: registered_keys
 
 - name: Configure RockNSM online repos
@@ -150,16 +150,16 @@
     cost: 750
     state: present
 
-- name: Setup local offline repo
-  yum_repository:
-    name: rocknsm-local
-    description: ROCKNSM Local Repository
-    baseurl: "{{ rocknsm_local_baseurl }}"
-    gpgcheck: "{{ rock_offline_gpgcheck }}"
-    gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RockNSM-2
-    repo_gpgcheck: "{{ rock_offline_gpgcheck }}"
-    cost: 500
-  when: not rock_disable_offline_repo
+#- name: Setup local offline repo
+#  yum_repository:
+#    name: rocknsm-local
+#    description: ROCKNSM Local Repository
+#    baseurl: "{{ rocknsm_local_baseurl }}"
+#    gpgcheck: "{{ rock_offline_gpgcheck }}"
+#    gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-RockNSM-2
+#    repo_gpgcheck: "{{ rock_offline_gpgcheck }}"
+#    cost: 500
+#  when: not rock_disable_offline_repo
 
 - name: Trust RockNSM GPG keys in yum
   command: "yum -q makecache -y --disablerepo='*' --enablerepo='{{ item.repoid }}'"
@@ -167,7 +167,7 @@
     - { repoid: "rocknsm_2_2", test: "{{ rock_online_install }}" }
     - { repoid: "rocknsm_2_2-source", test: "{{ rock_online_install }}" }
     - { repoid: "rocknsm-testing", test: "{{ rock_online_install }}" }
-    - { repoid: "rocknsm-local", test: "{{ not rock_online_install }}" }
+    #- { repoid: "rocknsm-local", test: "{{ not rock_online_install }}" }
   when: item.test | bool
   changed_when: False
   # TODO: Fix this ^^
