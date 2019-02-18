@@ -8,29 +8,18 @@
 # You will want to remount this to your "good" storage after the build.
 # This is just to make sure all the paths in the configs are proper.
 ###############
-- name: Create RockNSM data directory
+- name: Create RockNSM directories
   file:
     path: "{{ rock_data_dir }}"
     mode: 0755
     owner: "{{ rock_data_user }}"
     group: "{{ rock_data_group }}"
     state: directory
-
-- name: Create RockSNM conf directory
-  file:
-    path: "{{ rock_conf_dir }}"
-    mode: 0755
-    owner: root
-    group: root
-    state: directory
-
-- name: Create RockNSM directory
-  file:
-    path: "{{ rocknsm_dir }}"
-    mode: 0755
-    owner: root
-    group: root
-    state: directory
+  with_items:
+    - "{{ rock_data_dir }}"
+    - "{{ rock_conf_dir }}"
+    - "{{ rocknsm_dir }}"
+    - "{{ rock_cache_dir }}"
 
 - name: Download RockNSM elastic configs
   get_url:
