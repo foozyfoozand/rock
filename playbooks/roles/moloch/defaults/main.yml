@@ -1,0 +1,24 @@
+%YAML 1.1
+---
+
+#### Moloch configuration variables ####
+moloch_image: 'tfplenum/moloch'
+moloch_port: "8005"
+
+# User/Group and permissions for files copied
+moloch_user: "1000"
+moloch_group: "1000"
+moloch_dir_mode: "0660"
+moloch_exec_mode: "0755"
+
+# Username and password for Web login
+moloch_login: 'assessor'
+moloch_pass: 'password'
+
+# Location of moloch dirs/files
+moloch_dir: '{{ install_dir }}/moloch'
+moloch_path: /data/moloch
+moloch_config_path: "{{ moloch_path }}/etc"
+moloch_pcap_path: "{{ moloch_path }}/raw"
+
+...

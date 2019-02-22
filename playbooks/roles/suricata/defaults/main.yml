@@ -1,3 +1,7 @@
+%YAML 1.1
 ---
-# defaults file for suricata
-method: all
+
+suricata_image: 'tfplenum/suricata'
+suricata_dir: "{{ install_dir }}/suricata"
+
+...

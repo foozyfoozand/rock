@@ -1,81 +1,109 @@
+######################################################
+################# Setup Kibana #######################
+######################################################
 ---
 
-- name: Install packages
-  yum:
-    name: kibana
-    state: present
+- name: "Create config directory"
+  file:
+    path: "{{ kibana_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: u+rw,g+rw
 
-- name: Update kibana config
+- name: Install templates
   template:
-    src: kibana.yml.j2
-    dest: /etc/kibana/kibana.yml
-  notify: Restart kibana
+    src: "templates/{{ item }}.yml.j2"
+    dest: "{{ kibana_dir }}/{{ item }}.yml"
+    group: root
+    owner: root
+    mode: 0644
+  with_items:
+    - deploy
+    - svc
 
-- name: Flush handlers
-  meta: flush_handlers
+- name: Flush Deployments
+  shell: |
+    kubectl --kubeconfig {{ kubernetes_conf_file }} delete -f {{ kibana_dir }}/{{ item }}.yml
+    while [ $(kubectl --kubeconfig {{ kubernetes_conf_file }} get -f {{ kibana_dir }}/{{ item }}.yml | tail -n +2 | wc -l) != '0' ]; do
+      echo -n .;
+      sleep 1;
+    done;
+  with_items:
+    - deploy
+    - svc
+  ignore_errors: true
 
-- name: Enable and start kibana
-  service:
-    name: kibana
-    state: "started"
-    enabled: "{{ enable_kibana }}"
+- name: Deploy Services
+  import_role:
+    name: kubernetes/common
+    tasks_from: kube_create
+  vars:
+    name: "Kibana Service"
+    file_name: "{{ kibana_dir }}/svc.yml"
 
-- name: Wait for kibana to be available
+- name: Deploy Services
+  import_role:
+    name: kubernetes/common
+    tasks_from: kube_create
+  vars:
+    name: "Kibana"
+    file_name: "{{ kibana_dir }}/deploy.yml"
+
+- name: Wait for kibana to be ready
+  import_role:
+    name: kubernetes/common
+    tasks_from: kube_wait
+  vars:
+    type: "deployments"
+    namespace: "default"
+    resource_name: "kibana"
+    label: ""
+
+- name: Get Elasticsearch Service IP
+  shell: "kubectl get svc -n default | grep 'elasticsearch ' | awk '{print $4}'"
+  register: es_svc_ip
+
+- name: Get Kibana Service IP
+  shell: "kubectl get svc -n default | grep 'kibana' | awk '{print $4}'"
+  register: kibana_svc_ip
+
+- name: Wait for Kibana Service to become Available
   wait_for:
-    port: "{{ kibana_port }}"
+    host: "{{ kibana_svc_ip.stdout }}"
+    port: 80
+    delay: 30
+    timeout: 300
+  delegate_to: localhost
 
-- name: Blanket install/update kibana saved objects
-  command: ./import-saved-items.sh "{{ kibana_url }}"
-  args:
-    chdir: "{{rock_module_dir}}/configuration/kibana"
-  changed_when: false
-  # TODO: Fix this ^^
-
-- name: Configure kibana templates
+- name: Wait for Kibana to become healthy
   uri:
-    method: PUT
-    url: "{{ es_url }}/_template/kibana-config"
-    body: >
-      { "order" : 0, "template" : ".kibana",
-        "settings" :
-          { "index.number_of_replicas" : "0",
-            "index.number_of_shards" : "1" },
-        "mappings" : { }, "aliases" : { } }
+    url: "http://{{ kibana_svc_ip.stdout }}/api/status"
+    return_content: yes
+  register: results_kibana
+  until: (results_kibana.status == 200) and (results_kibana.json.status.overall.state == 'green')
+  retries: 20
+  delay: 5
+
+- name: Load Dashboards
+  uri:
+    url: "http://{{ kibana_svc_ip.stdout }}:80/api/kibana/dashboards/import?force=true"
+    method: POST
     body_format: json
-    status_code: 200,201
+    headers:
+      kbn-xsrf: y
+    body: "{{ lookup('file', '{{ item }}')}}"
+    status_code: 200, 201
+  with_fileglob:
+    - "files/dashboards/*.json"
 
-- name: Add the kibanapw shell function
-  copy:
-    src: profile.d-kibanapw.sh
-    dest: /etc/profile.d/kibanapw.sh
-    mode: 0644
-    owner: root
-    group: root
-
-- name: Set initial kibana credentials
-  shell: >
-    export kibuser=$(getent passwd 1000 | awk -F: '{print $1}') && \
-    export kibpw=$(xkcdpass -a rock) && \
-    echo -e "U: ${kibuser}\nP: ${kibpw}" > /home/${kibuser}/KIBANA_CREDS.README && \
-    printf "${kibuser}:$(echo ${kibpw} | openssl passwd -apr1 -stdin)\n" | \
-    sudo tee -a /etc/lighttpd/rock-htpasswd.user > /dev/null 2>&1
-  args:
-    creates: /etc/lighttpd/rock-htpasswd.user
-  when: with_lighttpd
-
-- name: Download RockNSM elastic configs
-  get_url:
-    url: "{{ rock_dashboards_url }}"
-    dest: "{{ rock_cache_dir }}/{{ rock_dashboards_filename }}"
-    mode: 0644
-  when: (with_elasticsearch or with_logstash) and rock_online_install
-
-- name: Extract RockNSM elastic configs
-  unarchive:
-    src: "{{ rock_cache_dir }}/{{ rock_dashboards_filename }}"
-    dest: /opt/rocknsm
-    owner: root
-    group: root
-    creates: "{{ rock_module_dir }}"
-    remote_src: yes
-  when: (with_elasticsearch or with_logstash)
+- name: Set Default Kibana Pattern
+  uri:
+    url: "http://{{ kibana_svc_ip.stdout }}:80/api/kibana/settings/defaultIndex"
+    method: POST
+    body_format: json
+    headers:
+      kbn-xsrf: y
+    body:
+      value: "logstash-*"
+    status_code: 200, 201

@@ -1,0 +1,13 @@
+---
+- import_tasks: "install.yml"
+- import_tasks: "configure.yml"
+- import_tasks: "service.yml"
+
+- name: Wait for 10 seconds to make sure the time server is ready
+  wait_for: timeout=10
+  delegate_to: localhost
+
+- name: 'Force time sync'
+  command: "chronyc -a makestep"
+
+- import_tasks: "sync.yml"

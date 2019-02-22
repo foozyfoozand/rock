@@ -1,0 +1,10 @@
+---
+
+- name: Install ceph-deploy
+  yum:
+    name: "ceph-deploy-1.5.39-0"
+    state: installed
+    allow_downgrade: yes
+  when: inventory_hostname in groups['master-server']
+
+...

@@ -1,0 +1,16 @@
+---
+- name: Install TFPlenum /etc/issue
+  copy:
+    src: etc-issue.in
+    dest: /etc/issue.in
+    mode: 0644
+    owner: root
+    group: root
+
+- name: NetworkManager TFPlenum hook
+  copy:
+    src: nm-issue-update
+    dest: /etc/NetworkManager/dispatcher.d/50-tfplenum-issue-update
+    mode: 0755
+    owner: root
+    group: root

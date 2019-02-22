@@ -6,15 +6,14 @@
 *~
 .#*
 .*.sw[a-z]
-.idea*
-*_cache
-*pycache*
 .DS_Store
 .bundle/*
 .kitchen
 .kitchen.local.yml
 .kitchen/
 .vagrant
+.vs
+.vscode/*
 /cookbooks
 Berksfile.lock
 Gemfile.lock
@@ -23,5 +22,12 @@ Vagrantfile.vmware
 pkg/
 repo/
 tmp/
+playbooks/roles/logstash/tasks/old-main\.yml
 
-\.vscode/ftp-sync\.json
+# We dont want to commit tokens to git
+playbooks/files/admin.conf
+playbooks/files/join-node.sh
+
+inventory/dev/*
+playbooks/inventory.yml
+.remote-sync.json

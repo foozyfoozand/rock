@@ -1,10 +1,7 @@
-#LOCAL NETS
-10.0.0.0/8 	RFC1918
-172.16.0.0/12	RFC1918
-192.168.0.0/16	RFC1918
+# List of local networks in CIDR notation, optionally followed by a
+# descriptive tag.
+# For example, "10.0.0.0/8" or "fe80::/64" are valid prefixes.
 
-##########
-## ROCK ##
-##########
-# Add networks for the networks you are monitoring into this file if they're not all RFC1918.
-##########
+{% for net in home_net %}
+{{- net }}
+{% endfor %}

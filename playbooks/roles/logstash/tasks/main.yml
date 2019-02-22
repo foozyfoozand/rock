@@ -1,115 +1,86 @@
+######################################################
+################# Setup Logstash #####################
+######################################################
 ---
 
-- name: Install packages
-  yum:
-    name:
-      - java-1.8.0-openjdk-headless
-      - logstash
-    state: present
+- name: "Create Logstash directory"
+  file:
+    path: "{{ logstash_dir }}/pipeline"
+    mode: u+rw,g+rw
+    owner: "{{ logstash_user }}"
+    group: "{{ logstash_group }}"
+    state: directory
 
-- name: Add bro input/output for logstash
+- name: Install Logstash templates
   template:
-    src: "{{ item }}.j2"
-    dest: "/etc/logstash/conf.d/{{ item }}.conf"
+    src: "templates/{{ item }}.j2"
+    dest: "{{ logstash_dir }}/{{ item }}"
     owner: "{{ logstash_user }}"
     group: "{{ logstash_group }}"
-    mode: 0640
-  when: with_bro and with_kafka
-  notify: Restart logstash
+    mode: 0644
   with_items:
-    - logstash-100-input-kafka-bro
-    - logstash-999-output-es-bro
+    - deploy.yml
+    - logstash.yml
 
-- name: Install bro-kafka filter for logstash
-  copy:
-    src: "{{rock_module_dir}}/configuration/logstash/{{item}}"
-    dest: "/etc/logstash/conf.d/{{item}}"
-    mode: 0640
-    owner: "{{ logstash_user }}"
-    group: "{{ logstash_group }}"
-    remote_src: "yes"
-  when: with_bro and with_kafka
-  notify: Restart logstash
-  with_items:
-    - logstash-500-filter-bro.conf
-
-- name: Add suricata input/output for logstash
+- name: Install pipeline templates
   template:
-    src: "{{ item }}.j2"
-    dest: "/etc/logstash/conf.d/{{ item }}.conf"
+    src: "{{ item }}"
+    dest: "{{ logstash_dir }}/pipeline/{{ item | basename | regex_replace('\\.j2','') }}"
     owner: "{{ logstash_user }}"
     group: "{{ logstash_group }}"
-    mode: 0640
-  when: with_suricata and with_kafka
-  notify: Restart logstash
-  with_items:
-    - logstash-100-input-kafka-suricata
-    - logstash-999-output-es-suricata
+    mode: 0644
+  with_fileglob:
+    - "templates/pipeline/*.j2"
 
-- name: Install suricata-kafka filter for logstash
+- name: Copy Additional Files
   copy:
-    src: "{{rock_module_dir}}/configuration/logstash/{{item}}"
-    dest: "/etc/logstash/conf.d/{{item}}"
-    mode: 0640
+    src: "files/"
+    dest: "{{ logstash_dir }}"
     owner: "{{ logstash_user }}"
     group: "{{ logstash_group }}"
-    remote_src: "yes"
-  when: with_suricata and with_kafka
-  notify: Restart logstash
-  with_items:
-    - logstash-500-filter-suricata.conf
+    mode: 0644
 
-- name: Add fsf input/output for logstash
-  template:
-    src: "{{ item }}.j2"
-    dest: "/etc/logstash/conf.d/{{ item }}.conf"
-    owner: "{{ logstash_user }}"
-    group: "{{ logstash_group }}"
-    mode: 0640
-  when: with_fsf and with_kafka
-  notify: Restart logstash
-  with_items:
-    - logstash-100-input-kafka-fsf
-    - logstash-999-output-es-fsf
+- name: Copy Additional Logstash Plugins to Servers
+  local_action: command /bin/sh -c "/usr/bin/ssh root@{{ item }} 'mkdir -p {{ logstash_dir }}' && /usr/bin/scp -rp {{ install_dir }}/playbooks/roles/logstash/files/plugins root@{{ item }}:{{ logstash_dir }}/"
+  with_items: "{{ groups['logstash'] }}"
 
-- name: Install fsf-kafka filter for logstash
-  copy:
-    src: "{{rock_module_dir}}/configuration/logstash/{{item}}"
-    dest: "/etc/logstash/conf.d/{{item}}"
-    mode: 0640
-    owner: "{{ logstash_user }}"
-    group: "{{ logstash_group }}"
-    remote_src: "yes"
-  when: with_fsf and with_kafka
-  notify: Restart logstash
-  with_items:
-    - logstash-500-filter-fsf.conf
+- name: Flush Deployment
+  shell: |
+    kubectl delete -f {{ logstash_dir }}/deploy.yml --ignore-not-found=true
+    while [ $(kubectl get -f {{ logstash_dir }}/deploy.yml | tail -n +2 | wc -l) != '0' ]; do
+      echo -n .;
+      sleep 1;
+    done;
+    sleep 5;
 
-- name: Add parse failure input/output for logstash
-  template:
-    src: "{{ item }}.j2"
-    dest: "/etc/logstash/conf.d/{{ item }}.conf"
-    owner: "{{ logstash_user }}"
-    group: "{{ logstash_group }}"
-    mode: 0640
-  notify: Restart logstash
-  with_items:
-    - logstash-999-output-es-parsefailures
+- name: Create Main ConfigMap
+  shell: |
+    kubectl create configmap logstash \
+    --from-file {{ logstash_dir }}/logstash-template.json \
+    --from-file {{ logstash_dir }}/logstash.yml \
+    --from-file {{ logstash_dir }}/log4j2.properties \
+    --dry-run -o yaml | kubectl replace --force -f -
 
-- name: Install parse failure configuration for logstash
-  copy:
-    src: "{{rock_module_dir}}/configuration/logstash/{{item}}"
-    dest: "/etc/logstash/conf.d/{{item}}"
-    mode: 0640
-    owner: "{{ logstash_user }}"
-    group: "{{ logstash_group }}"
-    remote_src: "yes"
-  notify: Restart logstash
-  with_items:
-    - logstash-998-filter-parsefailures.conf
+- name: Create Pipeline ConfigMap
+  shell: |
+    kubectl create configmap logstash-pipeline --from-file {{ logstash_dir }}/pipeline --dry-run -o yaml | kubectl replace --force -f -
 
-- name: Enable and start logstash
-  service:
-    name: logstash
-    state: "{{ 'started' if enable_logstash else 'stopped' }}"
-    enabled: "{{ enable_logstash }}"
+- name: Deploy Services
+  import_role:
+    name: kubernetes/common
+    tasks_from: kube_create
+  vars:
+    name: "Logstash"
+    file_name: "{{ logstash_dir }}/deploy.yml"
+
+- name: Wait for logstash to be ready
+  import_role:
+    name: kubernetes/common
+    tasks_from: kube_wait
+  vars:
+    type: "deployments"
+    namespace: "default"
+    resource_name: "logstash"
+    label: ""
+
+...
